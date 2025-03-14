@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: create ECR Repository and cloudwatch log group
+Resources:
+
+# ------------------------------------------------------------#
+# Repository
+# ------------------------------------------------------------#
+
+  ECREXAMPLEWEB:
+    Type: "AWS::ECR::Repository"
+    DeletionPolicy: Retain
+    Properties:
+      RepositoryName: example-httpd
+
+  ECRAPP:
+    Type: "AWS::ECR::Repository"
+    DeletionPolicy: Retain
+    Properties:
+      RepositoryName: example-tomcat
+
+# ------------------------------------------------------------#
+# cloudwatch log group
+# ------------------------------------------------------------#
+  #--- apache CloudWatch ---
+  CWLEXAMPLEWEB:
+      Type: "AWS::Logs::LogGroup"
+      DeletionPolicy: Retain
+      Properties:
+          LogGroupName: "/wc/ecs/example-httpd"
+          RetentionInDays: 1
+
+  #--- tomcat CloudWatch ---
+  CWLEXAMPLEAPP:
+    Type: "AWS::Logs::LogGroup"
+    DeletionPolicy: Retain
+    Properties:
+      LogGroupName: "/wc/ecs/example-tomcat"
+      RetentionInDays: 1
+
+# ------------------------------------------------------------#
+# Output Parameters
+# ------------------------------------------------------------#
+Outputs:
+  StackCWLWEB:
+    Value: !Ref CWLEXAMPLEWEB
+    Export:
+      Name: "CWL--EXAMPLE-WEB"
+  StackCWLAPP:
+    Value: !Ref CWLEXAMPLEAPP
+    Export:
+      Name: "CWL--EXAMPLE-APP"

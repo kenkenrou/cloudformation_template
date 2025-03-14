@@ -1,0 +1,193 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description:
+  create VPC
+
+# ------------------------------------------------------------#
+# Input Parameters
+# ------------------------------------------------------------#
+# Set parameters
+Parameters:
+  AZa:
+    Type: String
+    Default: ap-northeast-1a
+  AZc:
+    Type: String
+    Default: ap-northeast-1c
+
+# ------------------------------------------------------------#
+# Resources
+# ------------------------------------------------------------#
+Resources:
+
+#  VPC
+# ------------------------------------------------------------#
+  VPCEXAMPLE:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: "10.xx.xx.xx/16"
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      InstanceTenancy: default
+      Tags:
+      - Key: Name
+        Value: "VPC-EXAMPLE"
+
+#  DHCPOptions
+# ------------------------------------------------------------#
+  DHCPEXAMPLE:
+    Type: AWS::EC2::DHCPOptions
+    Properties:
+      DomainNameServers:
+      - "AmazonProvidedDNS"
+      Tags:
+      - Key: Name
+        Value: "DHCP-EXAMPLE"
+  AttachDHCPEXAMPLE:
+    Type: AWS::EC2::VPCDHCPOptionsAssociation
+    Properties:
+      DhcpOptionsId: !Ref DHCPEXAMPLE
+      VpcId: !Ref VPCEXAMPLE
+
+#  VPCFlowLog
+# ------------------------------------------------------------#
+  VPCEXAMPLEFLOWLOG:
+    Type: "AWS::EC2::FlowLog"
+    Properties:
+      LogDestination: !Sub
+        - "arn:${AWS::Partition}:s3:::${S3Name}"
+        - S3Name: !ImportValue "S3-EXAMPLE-VPCFLOWLOG"
+      LogDestinationType: s3
+      ResourceId: !Ref VPCEXAMPLE
+      ResourceType: "VPC"
+      TrafficType: "ALL"
+
+#  RouteTable
+# ------------------------------------------------------------#
+  RTEXAMPLE:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPCEXAMPLE
+      Tags:
+      - Key: Name
+        Value: "RT-EXAMPLE"
+
+#  Subnet
+# ------------------------------------------------------------#
+  SNEXAMPLE:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPCEXAMPLE
+      CidrBlock: "10.xx.1.0/24"
+      AvailabilityZone: !Ref AZa
+      Tags:
+      - Key: Name
+        Value: SN-EXAMPLE-a
+  AttachSNEXAMPLE:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SNEXAMPLE
+      RouteTableId: !Ref RTEXAMPLEPUBLIC
+
+
+#  Internet Gateway
+# ------------------------------------------------------------#
+  IGWEXAMPLE:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+      - Key: Name
+        Value: IGW-EXAMPLE
+  AttachIGWEXAMPLE:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPCEXAMPLE
+      InternetGatewayId: !Ref IGWEXAMPLE
+
+
+
+#  NAT Gateway
+# ------------------------------------------------------------#
+  NGWEXAMPLEa:
+    Type: "AWS::EC2::NatGateway"
+    Properties:
+      AllocationId: !ImportValue "EIP-EXAMPLE-NGWa"
+      SubnetId: !Ref SNEXAMPLEPUBLICa
+      Tags:
+      - Key: Name
+        Value: NGW-EXAMPLE-a
+
+  NGWEXAMPLEc:
+    Type: "AWS::EC2::NatGateway"
+    Properties:
+      AllocationId: !ImportValue "EIP-EXAMPLE-NGWc"
+      SubnetId: !Ref SNEXAMPLEPUBLICc
+      Tags:
+      - Key: Name
+        Value: NGW-EXAMPLE-c
+
+# TransitGateway Attach
+# ------------------------------------------------------------#
+  TGWAEXAMPLE:
+    Type: AWS::EC2::TransitGatewayVpcAttachment
+    Properties:
+      VpcId: !Ref VPCEXAMPLE
+      Options:
+        DnsSupport : enable
+        Ipv6Support: disable
+      SubnetIds:
+        - !Ref SNEXAMPLETGWa
+        - !Ref SNEXAMPLETGWc
+      TransitGatewayId: !ImportValue "TGW-EXAMPLE"
+      Tags:
+        - Key: Name
+          Value: TGWA-EXAMPLE-VPC
+
+# VPN用 CustomerGateway
+# ------------------------------------------------------------#
+  CGWEXAMPLE:
+    Type: AWS::EC2::CustomerGateway
+    Properties:
+      Type: ipsec.1
+      BgpAsn: 65000
+      IpAddress: xx.xx.xx.xx
+      Tags:
+      - Key: Name
+        Value: CGW-EXAMPLE
+
+
+# VPNConnection
+# ------------------------------------------------------------#
+  VPNCEXAMPLE:
+    Type: AWS::EC2::VPNConnection
+    Properties:
+      Type: ipsec.1
+      StaticRoutesOnly: true
+      CustomerGatewayId: !Ref CGWEXAMPLE
+      TransitGatewayId: !ImportValue "TGW-EXAMPLE"
+      Tags:
+      - Key: Name
+        Value: VPNC-EXAMPLE
+
+
+# Route TransitGateway
+# ------------------------------------------------------------#
+  RTEXAMPLEIGW:
+    Type: AWS::EC2::Route
+    DependsOn: AttachIGWEXAMPLE
+    Properties:
+      RouteTableId:  !Ref RTEXAMPLE
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref IGWEXAMPLE
+
+
+#  Endpoint
+# ------------------------------------------------------------#
+  EPEXAMPLES3:
+    Type: "AWS::EC2::VPCEndpoint"
+    Properties:
+      RouteTableIds:
+        - !Ref RTEXAMPLE
+        - !Ref RTEXAMPLE
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      VpcEndpointType: Gateway
+      VpcId: !Ref VPCEXAMPLE

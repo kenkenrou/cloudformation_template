@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template for EventBridge
+
+Parameters:
+  EventBusName:
+    Type: String
+    Default: 'aws.partner/datadog.com/xxxxxxxxxxxxxxx'
+
+Resources:
+
+# ------------------------------------------------------------#
+# IAM Role for EventRule
+# ------------------------------------------------------------#
+  IAMRoleEventRule:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ERExampleRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      MaxSessionDuration: 3600
+      Tags: []
+  PolicyEventRule:
+    Type: AWS::IAM::RolePolicy
+    Properties:
+      PolicyName: ERExamplePolicy
+      RoleName: !Ref IAMRoleEventRule
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ssm:SendCommand
+            Resource:
+              - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*
+              - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:*:document/AWS-RunShellScript
+
+# ------------------------------------------------------------#
+# EventRule
+# ------------------------------------------------------------#
+  ERRecreateContainer:
+    Type: AWS::Events::Rule
+    DependsOn:
+      - IAMRoleEventRule
+      - PolicyEventRule
+    Properties:
+      Name: Recreate-Container
+      EventPattern: >-
+        {
+          "source":[{"prefix":"aws.partner/datadog.com"}],
+          "detail-type": [{"prefix":"Datadog Alert Notification"}],
+          "detail":{
+            "alert_type":[{"prefix":"error"}],
+            "meta":{
+              "result":{
+                "group":[{"suffix":"<instance-name>"}]
+              }
+            }
+          }
+        }
+      State: ENABLED
+      EventBusName: !Ref EventBusName
+      Targets:
+        - Id: "SSMRunCommandTarget"
+          Arn: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript
+          RoleArn: !GetAtt IAMRoleEventRule.Arn
+          Input: >-
+            {
+            "executionTimeout":["300"],
+            "commands":[
+              "sudo docker compose -f /root/docker-compose.yml down && sudo docker compose -f /root/docker-compose.yml up -d"
+            ]
+            }
+          RunCommandParameters:
+            RunCommandTargets:
+              - Key: tag:Name
+                Values:
+                  - "<instance-name>"

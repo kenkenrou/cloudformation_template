@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description:
+  create Transit Gateway
+
+# ------------------------------------------------------------#
+# Resources
+# ------------------------------------------------------------#
+Resources:
+
+#  TransitGateway
+# ------------------------------------------------------------#
+  TGWEXAMPLE:
+    Type: "AWS::EC2::TransitGateway"
+    Properties:
+      AmazonSideAsn: 64513
+      Description: "-"
+      AutoAcceptSharedAttachments: "disable"
+      DefaultRouteTableAssociation: "enable"
+      DefaultRouteTablePropagation: "enable"
+      DnsSupport: "enable"
+      MulticastSupport: "disable"
+      VpnEcmpSupport: "enable"
+      Tags:
+      - Key: Name
+        Value: TGW-EXAMPLE
+
+
+#  他アカウントとTGW共有
+# ------------------------------------------------------------#
+  RAMEXAMPLETGW:
+    Type: "AWS::RAM::ResourceShare"
+    DependsOn:
+      - TGWEXAMPLE
+    Properties:
+      Name: RAM-EXAMPLE-TGW
+      ResourceArns:
+        - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:transit-gateway/${TGWEXAMPLE}"
+      Principals:
+        - "<other account id>"
+      Tags:
+        - Key: Name
+          Value: RAM-EXAMPLE-TGW
+# ------------------------------------------------------------#
+# Output Parameters
+# ------------------------------------------------------------#
+Outputs:
+
+# TransitGateway
+# ------------------------------------------------------------#
+  StackTGWEXAMPLE:
+    Description: "TGW-EXAMPLE ID"
+    Value: !Ref TGWEXAMPLE
+    Export:
+      Name: "TGW-EXAMPLE"

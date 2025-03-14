@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description:
+  create WAF
+
+# ------------------------------------------------------------#
+# Resources
+# ------------------------------------------------------------#
+Resources:
+
+# WAF v2
+# ------------------------------------------------------------#
+  WAFEXAMPLE:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: WAF-EXAMPLE
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        SampledRequestsEnabled: true
+        MetricName: WAF-EXAMPLE
+
+# WAF LogConfig
+# ------------------------------------------------------------#
+  WAFLogConfig:
+    Type: AWS::WAFv2::LoggingConfiguration
+    Properties:
+      LogDestinationConfigs:
+        - !Sub
+          - "arn:${AWS::Partition}:s3:::${S3Name}"
+          - S3Name: !ImportValue "S3-EXAMPLE-WAFLOG"
+      ResourceArn: !GetAtt WAFEXAMPLE.Arn
+
+# WAF Association
+# ------------------------------------------------------------#
+  WAFEXAMPLEASSOCIATION:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !ImportValue "ALB-EXAMPLE-WEB"
+      WebACLArn: !GetAtt WAFEXAMPLE.Arn

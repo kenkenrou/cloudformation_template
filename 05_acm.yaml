@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description:
+  create ACM
+
+# ------------------------------------------------------------#
+# Resources
+# ------------------------------------------------------------#
+Resources:
+
+#  ACM
+# ------------------------------------------------------------#
+  ACMExample:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: "example.com"
+      SubjectAlternativeNames:
+        - "*.example.com"
+      ValidationMethod: DNS
+
+# ------------------------------------------------------------#
+# Output Parameters
+# ------------------------------------------------------------#
+Outputs:
+
+  StackACMExample:
+    Description: "ACM-Example ID"
+    Value: !Ref ACMExample
+    Export:
+      Name: "ACM-Example"

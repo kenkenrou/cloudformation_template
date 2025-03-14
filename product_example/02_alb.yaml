@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: create resources
+Resources:
+
+# ------------------------------------------------------------#
+# ALB
+# ------------------------------------------------------------#
+
+#--- ALB ---
+  ALBEXAMPLE:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: ALB-EXAMPLE
+      Scheme: internet-facing
+      Subnets:
+        - !ImportValue SN-Example-a
+        - !ImportValue SN-Example-c
+      LoadBalancerAttributes:
+        - Key: deletion_protection.enabled
+          Value: true
+        - Key: access_logs.s3.enabled
+          Value: true
+        - Key: access_logs.s3.bucket
+          Value: !ImportValue S3-ELBLOG
+        - Key: access_logs.s3.prefix
+          Value: log/alb
+      SecurityGroups:
+        - !Ref SGALBEXAMPLE
+      Tags:
+        - Key: Name
+          Value: ALB-EXAMPLE
+
+#--- ALB Listener ---
+  LSNEXAMPLEHTTP:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TRGWEBEXAMPLE
+      LoadBalancerArn: !Ref ALBEXAMPLE
+      Port: 80
+      Protocol: HTTP
+
+#--- TargetGroup ---
+  TRGWEBEXAMPLE:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: TRG-WEB-EXAMPLE
+      VpcId: !ImportValue VPC-EXAMPLE
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      Tags:
+        - Key: target
+          Value: example webappserver
+
+#--- SG ALB ---
+  SGALBEXAMPLE:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "SG-ALB-EXAMPLE"
+      GroupDescription: "SG-ALB-EXAMPLE"
+      VpcId: !ImportValue VPC-EXAMPLE
+      SecurityGroupIngress:
+      - IpProtocol: "tcp"
+        FromPort: 80
+        ToPort: 80
+        CidrIp: xx.xx.xx.xx/32
+      - IpProtocol: "tcp"
+        FromPort: 443
+        ToPort: 443
+        CidrIp: xx.xx.xx.xx/32
+      SecurityGroupEgress:
+      - IpProtocol: "-1"
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: "SG-ALB-EXAMPLE"
+
+# ------------------------------------------------------------#
+# ECS
+# ------------------------------------------------------------#
+
+#--- SG ECS apache ---
+  SGECSEXAMPLEWEB:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "SG-ECS-EXAMPLE-WEB"
+      GroupDescription: "SG-ECS-EXAMPLE-WEB"
+      VpcId: !ImportValue VPC-EXAMPLE
+      SecurityGroupIngress:
+      - IpProtocol: "tcp"
+        FromPort: 80
+        ToPort: 80
+        SourceSecurityGroupId: !Ref SGALBADMINPHEONIX
+      - IpProtocol: "tcp"
+        FromPort: 443
+        ToPort: 443
+        SourceSecurityGroupId: !Ref SGALBADMINPHEONIX
+      SecurityGroupEgress:
+      - IpProtocol: "-1"
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: "SG-ECS-EXAMPLE-WEB"
+
+  #--- apahce ECS Cluster ---
+  ECSEXAMPLEWEB:
+      Type: "AWS::ECS::Cluster"
+      Properties:
+          ClusterName: "ExampleHttpdCluster"
+          CapacityProviders: 
+            - "FARGATE"
+            - "FARGATE_SPOT"
+
+# ------------------------------------------------------------#
+# Output Parameters
+# ------------------------------------------------------------#
+Outputs:
+  StackECSEXAMPLEWEB:
+    Value: !Ref ECSEXAMPLEWEB
+    Export:
+      Name: "ECS-EXAMPLE-WEB"
+  StackSGECSEXAMPLEWEB:
+    Value: !Ref SGECSEXAMPLEWEB
+    Export:
+      Name: "SG-ECS-EXAMPLE-WEB"
+  StackTRGWEBEXAMPLE:
+    Value: !Ref TRGWEBEXAMPLE
+    Export:
+      Name: "TRG-WEB-EXAMPLE"
+

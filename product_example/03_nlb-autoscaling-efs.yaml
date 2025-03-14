@@ -1,0 +1,241 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: create resources for Example
+Resources:
+
+# ------------------------------------------------------------#
+# NLB
+# ------------------------------------------------------------#
+  #--- NLB ---
+  NLBEXAMPLE:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: NLB-EXAMPLE
+      Scheme: internal
+      Subnets:
+        - !ImportValue SN-ELBAPP-a
+      LoadBalancerAttributes:
+        - Key: deletion_protection.enabled
+          Value: true
+      Type: network
+      SecurityGroups:
+        - !Ref SGNLBEXAMPLE
+      Tags:
+        - Key: Name
+          Value: NLB-EXAMPLE
+
+  #--- NLB Listener ---
+  LSNEXAMPLE:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TRGAPPEXAMPLE
+      LoadBalancerArn: !Ref NLBEXAMPLE
+      Port: 8009
+      Protocol: TCP
+
+  #--- TargetGroup ---
+  TRGAPPEXAMPLE:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: TRG-APP-EXAMPLE
+      VpcId: !ImportValue VPC-EXAMPLE
+      Port: 8009
+      Protocol: TCP
+      TargetType: ip
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: 'true'
+        - Key: preserve_client_ip.enabled
+          Value: 'true'
+
+  #--- SG NLB ---
+  SGNLBEXAMPLE:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "SG-NLB-EXAMPLE"
+      GroupDescription: "SG-NLB-EXAMPLE"
+      VpcId: !ImportValue VPC-EXAMPLE
+      SecurityGroupIngress:
+      - IpProtocol: "tcp"
+        FromPort: 8009
+        ToPort: 8009
+        SourceSecurityGroupId: !ImportValue SG-ECS-EXAMPLE-WEB
+      - IpProtocol: "tcp"
+        FromPort: 8888
+        ToPort: 8888
+        SourceSecurityGroupId: !ImportValue SG-ECS-EXAMPLE-WEB
+      SecurityGroupEgress:
+      - IpProtocol: "-1"
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: "SG-NLB-EXAMPLE"
+
+# ------------------------------------------------------------#
+# ECSonEC2 tomcat
+# ------------------------------------------------------------#
+  #--- SG ECS tomcat ---
+  SGECSEXAMPLEAPP:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "SG-ECS-EXAMPLE-APP"
+      GroupDescription: "SG-ECS-EXAMPLE-APP"
+      VpcId: !ImportValue VPC-EXAMPLE
+      SecurityGroupIngress:
+      - IpProtocol: "tcp"
+        FromPort: 8009
+        ToPort: 8009
+        SourceSecurityGroupId: !Ref SGNLBEXAMPLE
+      - IpProtocol: "tcp"
+        FromPort: 8888
+        ToPort: 8888
+        SourceSecurityGroupId: !Ref SGNLBEXAMPLE
+      SecurityGroupEgress:
+      - IpProtocol: "-1"
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: "SG-ECS-EXAMPLE-APP"
+
+  #--- tomcat ECS Cluster ---
+  ECSEXAMPLEAPP:
+    Type: "AWS::ECS::Cluster"
+    Properties:
+      ClusterName: "ExampleTomcatCluster"
+      CapacityProviders: 
+        - !Ref ECSCPEXAMPLE
+
+##### AutoScalingGroup #####
+  #--- CapacityProviders ---
+  ECSCPEXAMPLE:
+    Type: "AWS::ECS::CapacityProvider"
+    Properties:
+      AutoScalingGroupProvider: 
+        AutoScalingGroupArn: !Ref ECSEC2ASGEXAMPLE
+        ManagedScaling:
+          Status: "ENABLED"
+          TargetCapacity: 100
+
+  #--- AutoScaling ---
+  ECSEC2ASGEXAMPLE:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      AutoScalingGroupName: "ASG-ECS-ExampleTomcatCluster"
+      LaunchTemplate: 
+        LaunchTemplateId: !Ref ECSLTEXAMPLE
+        Version: !GetAtt  ECSLTEXAMPLE.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 2
+      DesiredCapacity: 1
+      Cooldown: 300
+      HealthCheckType: "EC2"
+      HealthCheckGracePeriod: 0
+      VPCZoneIdentifier: 
+        - !ImportValue SN-EXAMPLE-a
+      Tags: 
+        - 
+          Key: "AmazonECSManaged"
+          Value: ""
+          PropagateAtLaunch: true
+        - 
+          Key: "Name"
+          Value: !Sub "ECS Instance - ExampleTomcatCluster"
+          PropagateAtLaunch: true
+      NewInstancesProtectedFromScaleIn: false
+
+  #--- EC2LaunchTemplate ---
+  ECSLTEXAMPLE:
+    Type: "AWS::EC2::LaunchTemplate"
+    Properties:
+      LaunchTemplateName: "ECSLaunchTemplate_ExampleTomcat"
+      LaunchTemplateData: 
+        UserData: 
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            echo ECS_CLUSTER=ExampleTomcatCluster >> /etc/ecs/ecs.config;
+            aws ecr get-login-password --region ap-northeast-1 | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.ap-northeast-1.amazonaws.com;
+            curl -O https://raw.githubusercontent.com/awslabs/ecs-logs-collector/master/ecs-logs-collector.sh
+        BlockDeviceMappings: 
+          - 
+            DeviceName: "/dev/xvda"
+            Ebs: 
+              Encrypted: true
+              DeleteOnTermination: true
+              Iops: 3000
+              VolumeSize: 30
+              VolumeType: "gp3"
+              Throughput: 125
+        IamInstanceProfile: 
+          Arn: !Sub arn:aws:iam::${AWS::AccountId}:instance-profile/ecsInstanceRole
+        KeyName: "example-keypair"
+        NetworkInterfaces: 
+          - 
+            AssociatePublicIpAddress: false
+            DeleteOnTermination: true
+            DeviceIndex: 0
+            Groups: 
+              - !Ref SGECSEXAMPLEAPP
+        ImageId: ami-094879c0caf901de8
+        InstanceType: "t3.medium"
+        EbsOptimized: true
+
+# ------------------------------------------------------------#
+# EFS
+# ------------------------------------------------------------#
+#--- EFS SG ---
+  SGEFSExample:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "SG-EFS-EXAMPLE"
+      GroupName: "SG-EFS-EXAMPLE"
+      VpcId: !ImportValue VPC-EXAMPLE
+      SecurityGroupIngress:
+      - IpProtocol: "tcp"
+        FromPort: 2049
+        ToPort: 2049
+        SourceSecurityGroupId: !Ref SGECSEXAMPLEAPP
+      SecurityGroupEgress:
+      - CidrIp: "0.0.0.0/0"
+        IpProtocol: "-1"
+        FromPort: -1
+        ToPort: -1
+      Tags:
+      - Key: "Name"
+        Value: "SG-EFS-EXAMPLE"
+        
+
+#--- EFS ---
+  EFSExample:
+    Type: "AWS::EFS::FileSystem"
+    Properties:
+      PerformanceMode: "generalPurpose"
+      Encrypted: true
+      FileSystemTags:
+      - Key: "Name"
+        Value: "example-logs"
+      FileSystemProtection:
+        ReplicationOverwriteProtection: "ENABLED"
+      LifecyclePolicies:
+      - TransitionToIA: "AFTER_30_DAYS"
+      - TransitionToArchive: "AFTER_90_DAYS"
+      ThroughputMode: "elastic"
+      BackupPolicy:
+        Status: "DISABLED"
+
+#--- EFS Mount Target ---
+  EFSMTExample1:
+    Type: "AWS::EFS::MountTarget"
+    Properties:
+      FileSystemId: !Ref EFSExample
+      SecurityGroups:
+        - !Ref SGEFSExample
+      SubnetId: !ImportValue SN-EXAMPLE-a
+
+  EFSMTExample2:
+    Type: "AWS::EFS::MountTarget"
+    Properties:
+      FileSystemId: !Ref EFSExample
+      SecurityGroups:
+        - !Ref SGEFSExample
+      SubnetId: !ImportValue SN-EXAMPLE-c

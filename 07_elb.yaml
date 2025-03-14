@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description:
+  create ALB
+
+# ------------------------------------------------------------#
+# Resources
+# ------------------------------------------------------------#
+Resources:
+
+# ------------------------------------------------------------#
+#  ALB
+# ------------------------------------------------------------#
+
+  ALBWEBExample:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: "ALB-WEB-Example"
+      Scheme: "internet-facing"
+      Subnets:
+      - !ImportValue "SN-EXAMPLE"
+      LoadBalancerAttributes:
+      - Key: "deletion_protection.enabled"
+        Value: True
+      - Key: access_logs.s3.enabled
+        Value: True
+      - Key: access_logs.s3.bucket
+        Value: !ImportValue "S3-EXAMPLE-ELBLOG"
+      - Key: access_logs.s3.prefix
+        Value: log/alb
+      SecurityGroups:
+      - !ImportValue "SG-ALB-Example"
+      Tags:
+      - Key: Name
+        Value: ALB-WEB-Example
+
+# ------------------------------------------------------------#
+#  Target Group
+# ------------------------------------------------------------#
+
+  TRGWEBExample:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: "TRG-WEB-Example"
+      VpcId: !ImportValue "VPC-EXAMPLE"
+      Port: 80
+      Protocol: "HTTP"
+      TargetType: "ip"
+      TargetGroupAttributes: 
+      - Key: "stickiness.enabled"
+        Value: "true"
+      - Key: "stickiness.type"
+        Value: "lb_cookie"
+      - Key: "stickiness.lb_cookie.duration_seconds"
+        Value: "3600"
+      Tags:
+      - Key: target
+        Value: "new account web server"
+
+# ------------------------------------------------------------#
+#  Listener HTTP
+# ------------------------------------------------------------#
+
+  LSNWEBExampleHTTP:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions: 
+        - Type: redirect
+          RedirectConfig: 
+            Host: '#{host}'
+            Path: '/#{path}'
+            Port: 443
+            Protocol: HTTPS
+            Query: '#{query}'
+            StatusCode: HTTP_301
+      Port: 80
+      Protocol: HTTP
+      LoadBalancerArn: !Ref "ALBWEBExample"
+
+
+# ------------------------------------------------------------#
+#  Listener HTTPS
+# ------------------------------------------------------------#
+
+  LSNWEBExampleHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: "forward"
+        TargetGroupArn: !Ref "TRGWEBExample"
+      LoadBalancerArn: !Ref "ALBWEBExample"
+      Port: "443"
+      Protocol: "HTTPS"
+      Certificates:
+        - CertificateArn: !ImportValue "ACM-Default-Domain"
+      SslPolicy: "ELBSecurityPolicy-TLS13-1-2-2021-06"
+
+# ------------------------------------------------------------#
+#  ListenerCertificate
+# ------------------------------------------------------------#
+
+  LSCWEBExample:
+    Type: AWS::ElasticLoadBalancingV2::ListenerCertificate
+    Properties:
+      Certificates:
+        - CertificateArn: !ImportValue "ACM-Second-Domain"
+        - CertificateArn: !ImportValue "ACM-Thrid-Domain"
+
+# ------------------------------------------------------------#
+#  ListenerRule
+# ------------------------------------------------------------#
+  LSRWEBExample01:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Priority: "1"
+      ListenerArn: !Ref "LSNWEBExampleHTTPS"
+      Actions:
+      - Type: "forward"
+        TargetGroupArn: !Ref "TRGWEBExample"
+      Conditions:
+      - Field: "host-header"
+        Values:
+        - "example.com"
+      - Field: "path-pattern"
+        Values:
+        - "/test/*"
+        - "/favicon.ico"
+
+  LSRWEBExample02:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Priority: "2"
+      ListenerArn: !Ref "LSNWEBExampleHTTPS"
+      Actions:
+      - Type: "forward"
+        TargetGroupArn: !Ref "TRGWEBExample"
+      Conditions:
+      - Field: "host-header"
+        Values:
+        - "example.com"
+
+  LSRWEBExample03:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Priority: "3"
+      ListenerArn: !Ref "LSNWEBExampleHTTPS"
+      Actions:
+      - Type: "forward"
+        TargetGroupArn: !Ref "TRGWEBExample"
+      Conditions:
+      - Field: "host-header"
+        Values:
+        - "example.com"
+      - Field: "path-pattern"
+        Values:
+        - "/top/*"
+        - "/css/*"
+        - "/error/*"

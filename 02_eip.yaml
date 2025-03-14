@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description:
+  create EIP
+
+# ------------------------------------------------------------#
+# Resources
+# ------------------------------------------------------------#
+Resources:
+
+#  EIP
+# ------------------------------------------------------------#
+  EIPEXAMPLENGW:
+    Type: AWS::EC2::EIP
+    Properties:
+      Tags:
+        - Key: Name
+          Value: EIP-EXAMPLE-NGW
+
+# ------------------------------------------------------------#
+# Output Parameters
+# ------------------------------------------------------------#
+Outputs:
+
+#  EIP Association
+# ------------------------------------------------------------#
+  StackEIPEXAMPLENGW:
+    Description: "EIP-EIPEXAMPLENGW ID"
+    Value: !GetAtt EIPEXAMPLENGW.AllocationId
+    Export:
+      Name: "EIP-EXAMPLE-NGW"
+
+  StackEIPEXAMPLENGWcPublicIP:
+    Description: "EIP-EIPEXAMPLENGW Public IP"
+    Value: !GetAtt EIPEXAMPLENGW.PublicIp
+    Export:
+      Name: "EIP-EXAMPLE-NGW-PublicIP"

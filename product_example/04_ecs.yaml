@@ -1,0 +1,169 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: create resources for Example apache ECS
+
+Parameters:
+  CNHttpd:
+    Type: String
+    Default: example-httpd
+
+  CNTomcat:
+    Type: String
+    Default: example-tomcat
+
+# ------------------------------------------------------------#
+# Apache
+# ------------------------------------------------------------#
+
+#--- ECS Service ---
+Resources:
+  ECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !ImportValue ECS-EXAMPLE-WEB
+      ServiceName: "httpd"
+      TaskDefinition: !Ref ECSTDExampleHttpd
+      DesiredCount: 1
+      LaunchType: FARGATE
+      LoadBalancers:
+        - ContainerName: !Ref CNHttpd
+          ContainerPort: 80
+          TargetGroupArn: !ImportValue TRG-WEB-EXAMPLE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !ImportValue SG-ECS-EXAMPLE-WEB
+          Subnets:
+            - !ImportValue SN-WEB-a
+
+#--- Apache TaskDifinitions ---
+  ECSTDExampleHttpd:
+    Type: 'AWS::ECS::TaskDefinition'
+    UpdateReplacePolicy: "Retain"
+    DeletionPolicy: "Retain"
+    Properties:
+      Family: example-httpd-cluster
+      TaskRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRole
+      ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole
+      NetworkMode: awsvpc
+      Cpu: '256'
+      Memory: '1024'
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ContainerDefinitions:
+        - Name: !Ref CNHttpd
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.ap-northeast-1.amazonaws.com/example-httpd:latest
+          Cpu: 0
+          PortMappings:
+            - ContainerPort: 80
+              HostPort: 80
+              Protocol: tcp
+          Essential: true
+          Environment:
+            - Name: NLB_IP
+              Value: xx.xx.xx.xx
+          MountPoints: []
+          VolumesFrom: []
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !ImportValue CWL-EXAMPLE-WEB
+              awslogs-create-group: 'true'
+              awslogs-region: ap-northeast-1
+              awslogs-stream-prefix: !Ref CNHttpd
+          SystemControls: []
+
+
+# ------------------------------------------------------------#
+# Tomcat
+# ------------------------------------------------------------#
+  ECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !ImportValue ECS-EXAMPLE-APP
+      ServiceName: "tomcat"
+      CapacityProviderStrategy:
+        - CapacityProvider: !ImportValue ECS-CP-EXAMPLE
+          Base: 0
+          Weight: 1
+      TaskDefinition: !Ref ECSTDExampleTomcat
+      DesiredCount: 1
+      LoadBalancers:
+        - ContainerName: !Ref CNTomcat
+          ContainerPort: 8009
+          TargetGroupArn: !ImportValue TRG-APP-EXAMPLE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !ImportValue SG-ECS-EXAMPLE-APP
+          Subnets:
+            - !ImportValue SN-APP-a
+      PlacementStrategies:
+        - Field: "instanceId"
+          Type: "spread"
+        - Field: "attribute:ecs.availability-zone"
+          Type: "spread"
+
+#--- Tomcat TaskDifinitions ---
+  ECSTDExampleTomcat:
+    Type: "AWS::ECS::TaskDefinition"
+    UpdateReplacePolicy: "Retain"
+    DeletionPolicy: "Retain"
+    Properties:
+      Family: "example-tomcat-cluster"
+      TaskRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRole
+      ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole
+      NetworkMode: "awsvpc"
+      Cpu: '2048'
+      Memory: '2048'
+      RequiresCompatibilities:
+      - "EC2"
+      RuntimePlatform:
+        OperatingSystemFamily: "LINUX"
+        CpuArchitecture: "X86_64"
+      Volumes:
+      - Name: "NFS"
+        DockerVolumeConfiguration:
+          Scope: "task"
+          Driver: "local"
+          DriverOpts:
+            type: "nfs"
+            device: "xx.xx.xx.xx:/home/www/test/htdocs"
+            o: "addr=xx.xx.xx.xx,nfsvers=4"
+      - Name: "EFS"
+        EFSVolumeConfiguration:
+          FilesystemId:
+            !ImportValue EFS-EXAMPLE
+          RootDirectory: "/"
+          TransitEncryption: "ENABLED"
+      ContainerDefinitions:
+      - Name: !Ref CNTomcat
+        Image: !Sub ${AWS::AccountId}.dkr.ecr.ap-northeast-1.amazonaws.com/example-tomcat:latest
+        Cpu: 0
+        PortMappings:
+        - ContainerPort: 8888
+          Protocol: "tcp"
+          HostPort: 8888
+        - ContainerPort: 8009
+          Protocol: "tcp"
+          HostPort: 8009
+        Essential: true
+        Environment: []
+        MountPoints:
+        - SourceVolume: "NFS"
+          ContainerPath: "/home/www/img-phoenix/htdocs/"
+        - SourceVolume: "EFS"
+          ContainerPath: "/home/www/localhost/logs/"
+        VolumesFrom: []
+        LogConfiguration:
+          LogDriver: "awslogs"
+          Options:
+            awslogs-group: !ImportValue CWL-EXAMPLE-APP
+            awslogs-create-group: "true"
+            awslogs-region: "ap-northeast-1"
+            awslogs-stream-prefix: !Ref CNTomcat
+        SystemControls: []
